@@ -73,8 +73,7 @@ GET_TRACKERS() {
     done
     # 最终合并所有结果，移除空行和末尾逗号
     TRACKER="$(echo "${TRACKER}" | tr "," "\n" | awk NF | sort -u | paste -sd "," - | sed 's/,$//')"
-    
-fi
+    fi
 
     [[ -z "${TRACKER}" ]] && {
         echo
