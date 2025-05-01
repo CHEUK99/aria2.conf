@@ -56,13 +56,17 @@ GET_TRACKERS() {
                 ${DOWNLOADER} https://cf.trackerslist.com/all.txt ||
                 ${DOWNLOADER} https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt 
         )
-    else
-        echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers from url(s):${CUSTOM_TRACKER_URL} ..."
-        URLS=$(echo ${CUSTOM_TRACKER_URL} | tr "," "$NL")
-        for URL in $URLS; do
-            TRACKER+="$(${DOWNLOADER} ${URL} | tr "," "\n")$NL"
-        done
-        TRACKER="$(echo "$TRACKER" | awk NF | sort -u | sed 'H;1h;$!d;x;y/\n/,/' )"
+        else
+    echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers from url(s):${CUSTOM_TRACKER_URL} ..."
+    URLS=$(echo ${CUSTOM_TRACKER_URL} | tr "," "$NL")
+    for URL in $URLS; do
+        # 关键修改：兼容逗号和换行符混合格式
+        TRACKER_DATA="$(${DOWNLOADER} ${URL})"
+        # 替换逗号为换行符，再移除空行和重复项
+        TRACKER+="$(echo "${TRACKER_DATA}" | tr "," "\n" | awk NF | sort -u)$NL"
+    done
+    # 合并为逗号分隔的单行
+    TRACKER="$(echo "$TRACKER" | awk NF | paste -sd "," -)"
     fi
 
     [[ -z "${TRACKER}" ]] && {
