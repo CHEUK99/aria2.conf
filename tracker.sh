@@ -56,18 +56,25 @@ GET_TRACKERS() {
                 ${DOWNLOADER} https://cf.trackerslist.com/all.txt ||
                 ${DOWNLOADER} https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt 
         )
-        else
+   else
     echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers from url(s):${CUSTOM_TRACKER_URL} ..."
-    URLS=$(echo ${CUSTOM_TRACKER_URL} | tr "," "$NL")
-    for URL in $URLS; do
-        # 关键修改：兼容逗号和换行符混合格式
-        TRACKER_DATA="$(${DOWNLOADER} ${URL})"
-        # 替换逗号为换行符，再移除空行和重复项
-        TRACKER+="$(echo "${TRACKER_DATA}" | tr "," "\n" | awk NF | sort -u)$NL"
+    URLS=$(echo "${CUSTOM_TRACKER_URL}" | tr "," "\n")
+    for URL in ${URLS}; do
+        # 下载数据并统一处理（兼容所有分隔符：换行、逗号、空格、分号等）
+        TRACKER_DATA="$(${DOWNLOADER} "${URL}")"
+        # 核心处理：将所有非字母数字字符转为换行 -> 过滤有效URL -> 去重 -> 逗号分隔
+        TRACKER+="$(
+            echo "${TRACKER_DATA}" \
+            | tr -s ',;| \t' '\n' \  # 所有分隔符转换行符
+            | grep -E '^(udp|http|https)://[^/:]+(:[0-9]+)?(/|$)' \
+            | sort -u \
+            | paste -sd "," -
+        )"$NL"
     done
-    # 合并为逗号分隔的单行
-    TRACKER="$(echo "$TRACKER" | awk NF | paste -sd "," -)"
-    fi
+    # 最终合并所有结果，移除空行和末尾逗号
+    TRACKER="$(echo "${TRACKER}" | tr "," "\n" | awk NF | sort -u | paste -sd "," - | sed 's/,$//')"
+    
+fi
 
     [[ -z "${TRACKER}" ]] && {
         echo
