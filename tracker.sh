@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
 #
-# 修复版 Tracker 更新脚本
-# 修复问题：
-# 1. TRACKER变量未初始化导致拼接问题
-# 2. 自定义URL处理逻辑错误
-# 3. 多源下载失败处理不完善
-# 4. 输出格式不规范
+# https://github.com/P3TERX/aria2.conf
+# File name：tracker.sh
+# Description: Get BT trackers and add to Aria2
+# Version: 3.1
+#
+# Copyright (c) 2018-2021 P3TERX <https://p3terx.com>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# BT tracker is provided by the following project.
+# https://github.com/XIU2/TrackersListCollection
 #
 
 RED_FONT_PREFIX="\033[31m"
@@ -15,160 +36,121 @@ LIGHT_PURPLE_FONT_PREFIX="\033[1;35m"
 FONT_COLOR_SUFFIX="\033[0m"
 INFO="[${GREEN_FONT_PREFIX}INFO${FONT_COLOR_SUFFIX}]"
 ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
-ARIA2_CONF="${1:-aria2.conf}"
-DOWNLOADER="curl -fsSL --connect-timeout 5 --max-time 10 --retry 2"
+ARIA2_CONF=${1:-aria2.conf}
+DOWNLOADER="curl -fsSL --connect-timeout 3 --max-time 3 --retry 2"
 NL=$'\n'
 
 DATE_TIME() {
-    date +"%Y-%m-%d %H:%M:%S"
+    date +"%m/%d %H:%M:%S"
 }
 
 GET_TRACKERS() {
-    local TRACKER=""
     
     if [[ -z "${CUSTOM_TRACKER_URL}" ]]; then
-        echo -e "$(DATE_TIME) ${INFO} 获取默认Tracker列表..."
+        echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers..."
         TRACKER=$(
-            ${DOWNLOADER} "https://trackerslist.com/all_aria2.txt" || \
-            ${DOWNLOADER} "https://cdn.statically.io/gh/XIU2/TrackersListCollection/master/all_aria2.txt" || \
-            ${DOWNLOADER} "https://trackers.p3terx.com/all_aria2.txt" || \
-            ${DOWNLOADER} "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt"
+            ${DOWNLOADER} https://trackerslist.com/all_aria2.txt ||
+                ${DOWNLOADER} https://cdn.statically.io/gh/XIU2/TrackersListCollection/master/all_aria2.txt ||
+                ${DOWNLOADER} https://raw.githubusercontent.com/adysec/tracker/refs/heads/main/trackers_all.txt ||
+                ${DOWNLOADER} https://trackers.p3terx.com/all_aria2.txt ||
+                ${DOWNLOADER} https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt
         )
     else
-        echo -e "$(DATE_TIME) ${INFO} 从自定义URL获取Tracker..."
-        TRACKER=""
-        IFS=',' read -ra URLS <<< "${CUSTOM_TRACKER_URL}"
-        
-        for URL in "${URLS[@]}"; do
-            echo -e "$(DATE_TIME) ${INFO} 正在下载: ${URL}"
-            DATA="$(${DOWNLOADER} "${URL}" 2>/dev/null)"
-            
-            if [[ -n "${DATA}" ]]; then
-                # 统一处理各种分隔符格式
-                FORMATTED=$(echo "${DATA}" | \
-                    tr ',' '\n' | \
-                    grep -E '^(udp|http|https)://[^/:]+(:[0-9]+)?' | \
-                    sort -u | \
-                    paste -sd ',')
-                
-                [[ -n "${FORMATTED}" ]] && TRACKER+="${FORMATTED},"
-            fi
+        echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers from url(s):${CUSTOM_TRACKER_URL} ..."
+        URLS=$(echo ${CUSTOM_TRACKER_URL} | tr "," "$NL")
+        for URL in $URLS; do
+            TRACKER+="$(${DOWNLOADER} ${URL} | tr "," "\n")$NL"
         done
-        
-        TRACKER="${TRACKER%,}"
+        TRACKER="$(echo "$TRACKER" | awk NF | sort -u | sed 'H;1h;$!d;x;y/\n/,/' )"
     fi
 
     [[ -z "${TRACKER}" ]] && {
-        echo -e "$(DATE_TIME) ${ERROR} 无法获取Tracker列表"
-        exit 1
+        echo
+        echo -e "$(DATE_TIME) ${ERROR} Unable to get trackers, network failure or invalid links." && exit 1
     }
-
-    # 最终去重处理
-    echo "${TRACKER}" | awk -F, '{for(i=1;i<=NF;i++) if(!a[$i]++) printf("%s%s",$i,(i==NF)?ORS:OFS)}' | tr ' ' ','
 }
 
 ECHO_TRACKERS() {
-    echo -e "\n${GREEN_FONT_PREFIX}========== 有效Tracker列表 ==========${FONT_COLOR_SUFFIX}"
-    echo "${1}" | tr "," "\n"
-    echo -e "${GREEN_FONT_PREFIX}===================================${FONT_COLOR_SUFFIX}"
-    echo -e "${INFO} 总数: $(echo "${1}" | tr -cd ',' | wc -c)个\n"
+    echo -e "
+--------------------[BitTorrent Trackers]--------------------
+${TRACKER}
+--------------------[BitTorrent Trackers]--------------------
+"
 }
 
 ADD_TRACKERS() {
-    local CONFIG_FILE="${1}"
-    local TRACKERS="${2}"
-    
-    echo -e "$(DATE_TIME) ${INFO} 更新配置文件: ${CONFIG_FILE}"
-    
-    [[ ! -f "${CONFIG_FILE}" ]] && {
-        echo -e "$(DATE_TIME) ${ERROR} 配置文件不存在"
-        return 1
-    }
-
-    # 创建备份
-    cp "${CONFIG_FILE}" "${CONFIG_FILE}.bak" 2>/dev/null
-    
-    # 更新配置
-    if grep -q "bt-tracker=" "${CONFIG_FILE}"; then
-        sed -i "s|^bt-tracker=.*|bt-tracker=${TRACKERS}|" "${CONFIG_FILE}"
+    echo -e "$(DATE_TIME) ${INFO} Adding BT trackers to Aria2 configuration file ${LIGHT_PURPLE_FONT_PREFIX}${ARIA2_CONF}${FONT_COLOR_SUFFIX} ..." && echo
+    if [ ! -f ${ARIA2_CONF} ]; then
+        echo -e "$(DATE_TIME) ${ERROR} '${ARIA2_CONF}' does not exist."
+        exit 1
     else
-        echo "bt-tracker=${TRACKERS}" >> "${CONFIG_FILE}"
+        [ -z $(grep "bt-tracker=" ${ARIA2_CONF}) ] && echo "bt-tracker=" >>${ARIA2_CONF}
+        sed -i "s@^\(bt-tracker=\).*@\1${TRACKER}@" ${ARIA2_CONF} && echo -e "$(DATE_TIME) ${INFO} BT trackers successfully added to Aria2 configuration file !"
     fi
-    
-    [[ $? -eq 0 ]] && echo -e "$(DATE_TIME) ${INFO} 更新成功" || \
-    echo -e "$(DATE_TIME) ${ERROR} 更新失败"
 }
 
 ADD_TRACKERS_RPC() {
-    local RPC_URL="${1}"
-    local SECRET="${2}"
-    local TRACKERS="${3}"
-    
-    local PAYLOAD
-    if [[ -n "${SECRET}" ]]; then
-        PAYLOAD='{"jsonrpc":"2.0","method":"aria2.changeGlobalOption","id":"tracker-update","params":["token:'${SECRET}'",{"bt-tracker":"'${TRACKERS}'"}]}'
+    if [[ "${RPC_SECRET}" ]]; then
+        RPC_PAYLOAD='{"jsonrpc":"2.0","method":"aria2.changeGlobalOption","id":"P3TERX","params":["token:'${RPC_SECRET}'",{"bt-tracker":"'${TRACKER}'"}]}'
     else
-        PAYLOAD='{"jsonrpc":"2.0","method":"aria2.changeGlobalOption","id":"tracker-update","params":[{"bt-tracker":"'${TRACKERS}'"}]}'
+        RPC_PAYLOAD='{"jsonrpc":"2.0","method":"aria2.changeGlobalOption","id":"P3TERX","params":[{"bt-tracker":"'${TRACKER}'"}]}'
     fi
-
-    echo -e "$(DATE_TIME) ${INFO} 通过RPC更新..."
-    RESPONSE=$(curl -fsS --connect-timeout 5 "${RPC_URL}" \
-        -H "Content-Type: application/json" \
-        -d "${PAYLOAD}" 2>/dev/null)
-    
-    if [[ $? -eq 0 ]] && echo "${RESPONSE}" | grep -q '"result":"OK"'; then
-        echo -e "$(DATE_TIME) ${INFO} RPC更新成功"
-        return 0
-    else
-        echo -e "$(DATE_TIME) ${ERROR} RPC更新失败"
-        [[ -n "${RESPONSE}" ]] && echo -e "${RESPONSE}"
-        return 1
-    fi
+    curl "${RPC_ADDRESS}" -fsSd "${RPC_PAYLOAD}" || curl "https://${RPC_ADDRESS}" -kfsSd "${RPC_PAYLOAD}"
 }
 
-# 主程序
-main() {
-    # 检查依赖
-    if ! command -v curl &>/dev/null; then
-        echo -e "$(DATE_TIME) ${ERROR} 需要curl但未安装"
+ADD_TRACKERS_RPC_STATUS() {
+    RPC_RESULT=$(ADD_TRACKERS_RPC)
+    [[ $(echo ${RPC_RESULT} | grep OK) ]] &&
+        echo -e "$(DATE_TIME) ${INFO} BT trackers successfully added to Aria2 !" ||
+        echo -e "$(DATE_TIME) ${ERROR} Network failure or Aria2 RPC interface error!"
+}
+
+ADD_TRACKERS_REMOTE_RPC() {
+    echo -e "$(DATE_TIME) ${INFO} Adding BT trackers to remote Aria2: ${LIGHT_PURPLE_FONT_PREFIX}${RPC_ADDRESS%/*}${FONT_COLOR_SUFFIX} ..." && echo
+    ADD_TRACKERS_RPC_STATUS
+}
+
+ADD_TRACKERS_LOCAL_RPC() {
+    if [ ! -f ${ARIA2_CONF} ]; then
+        echo -e "$(DATE_TIME) ${ERROR} '${ARIA2_CONF}' does not exist."
         exit 1
+    else
+        RPC_PORT=$(grep ^rpc-listen-port ${ARIA2_CONF} | cut -d= -f2-)
+        RPC_SECRET=$(grep ^rpc-secret ${ARIA2_CONF} | cut -d= -f2-)
+        [[ ${RPC_PORT} ]] || {
+            echo -e "$(DATE_TIME) ${ERROR} Aria2 configuration file incomplete."
+            exit 1
+        }
+        RPC_ADDRESS="localhost:${RPC_PORT}/jsonrpc"
+        echo -e "$(DATE_TIME) ${INFO} Adding BT trackers to Aria2 ..." && echo
+        ADD_TRACKERS_RPC_STATUS
     fi
-
-    # 获取Tracker
-    TRACKERS=$(GET_TRACKERS)
-    [[ -z "${TRACKERS}" ]] && exit 1
-    
-    # 显示Tracker
-    ECHO_TRACKERS "${TRACKERS}"
-
-    # 执行操作
-    case "$1" in
-        "cat")
-            # 仅显示
-            ;;
-        "RPC")
-            # 远程RPC
-            [[ $# -lt 2 ]] && {
-                echo -e "$(DATE_TIME) ${ERROR} 用法: $0 RPC <地址> [密码]"
-                exit 1
-            }
-            ADD_TRACKERS_RPC "$2/jsonrpc" "$3" "${TRACKERS}"
-            ;;
-        *)
-            # 更新配置文件
-            ADD_TRACKERS "${ARIA2_CONF}" "${TRACKERS}"
-            
-            # 本地RPC
-            if [[ "$2" == "RPC" ]]; then
-                PORT=$(grep -oP '^rpc-listen-port=\K\d+' "${ARIA2_CONF}" 2>/dev/null)
-                SECRET=$(grep -oP '^rpc-secret=\K[^ ]+' "${ARIA2_CONF}" 2>/dev/null)
-                
-                [[ -n "${PORT}" ]] && \
-                ADD_TRACKERS_RPC "http://localhost:${PORT}/jsonrpc" "${SECRET}" "${TRACKERS}" || \
-                echo -e "$(DATE_TIME) ${ERROR} 获取RPC端口失败"
-            fi
-            ;;
-    esac
 }
 
-main "$@"
+[ $(command -v curl) ] || {
+    echo -e "$(DATE_TIME) ${ERROR} curl is not installed."
+    exit 1
+}
+
+if [ "$1" = "cat" ]; then
+    GET_TRACKERS
+    ECHO_TRACKERS
+elif [ "$1" = "RPC" ]; then
+    RPC_ADDRESS="$2/jsonrpc"
+    RPC_SECRET="$3"
+    GET_TRACKERS
+    ECHO_TRACKERS
+    ADD_TRACKERS_REMOTE_RPC
+elif [ "$2" = "RPC" ]; then
+    GET_TRACKERS
+    ECHO_TRACKERS
+    ADD_TRACKERS
+    echo
+    ADD_TRACKERS_LOCAL_RPC
+else
+    GET_TRACKERS
+    ECHO_TRACKERS
+    ADD_TRACKERS
+fi
+
+exit 0
