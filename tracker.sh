@@ -1,73 +1,86 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-RED_FONT_PREFIX="\033[31m"
-GREEN_FONT_PREFIX="\033[32m"
-YELLOW_FONT_PREFIX="\033[1;33m"
-LIGHT_PURPLE_FONT_PREFIX="\033[1;35m"
-FONT_COLOR_SUFFIX="\033[0m"
-INFO="[${GREEN_FONT_PREFIX}INFO${FONT_COLOR_SUFFIX}]"
-ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
-ARIA2_CONF=${1:-aria2.conf}
-DOWNLOADER="curl -fsSL --connect-timeout 3 --max-time 3 --retry 2"
-NL=$'\n'
+# 配置文件路径 (与aria2.conf一致)
+ARIA2_CONF="/path/to/your/aria2.conf"
+RPC_URL="http://localhost:6800/jsonrpc"
+RPC_SECRET="CHEUK"
 
-DATE_TIME() {
-    date +"%m/%d %H:%M:%S"
+# Tracker源列表 (多源冗余)
+TRACKER_SOURCES=(
+    "https://trackerslist.com/all_aria2.txt"
+    "https://cdn.staticaly.com/gh/XIU2/TrackersListCollection/master/all_aria2.txt"
+    "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt"
+    "http://tinytorrent.net/best-trackers.txt"
+    "https://newtrackon.com/api/live"
+)
+
+# 获取最新Tracker列表
+fetch_trackers() {
+    local final_trackers=""
+    
+    for source in "${TRACKER_SOURCES[@]}"; do
+        echo "尝试从 $source 获取Tracker..."
+        if trackers=$(curl -fsSL --connect-timeout 10 "$source" 2>/dev/null); then
+            # 统一格式化处理
+            formatted=$(echo "$trackers" | \
+                tr ',' '\n' | \
+                grep -E '^(udp|http|https)://[^/:]+(:[0-9]+)?' | \
+                sort -u | \
+                paste -sd ',')
+            
+            [ -n "$formatted" ] && final_trackers+="${formatted},"
+            echo "获取成功，共 $(echo "$formatted" | tr -cd ',' | wc -c) 个Tracker"
+        fi
+    done
+
+    # 去重并移除末尾逗号
+    echo "${final_trackers}" | \
+        tr ',' '\n' | \
+        sort -u | \
+        paste -sd ',' | \
+        sed 's/,$//'
 }
 
-GET_TRACKERS() {
-    TRACKER=""
-    if [[ -z "${CUSTOM_TRACKER_URL}" ]]; then
-        echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers..."
-        TRACKER=$(
-            ${DOWNLOADER} https://trackerslist.com/all_aria2.txt ||
-            ${DOWNLOADER} https://cdn.statically.io/gh/XIU2/TrackersListCollection/master/all_aria2.txt ||
-            ${DOWNLOADER} https://trackers.p3terx.com/all_aria2.txt
-        )
+# 更新配置文件
+update_config() {
+    local trackers="$1"
+    
+    # 备份原配置
+    cp "$ARIA2_CONF" "${ARIA2_CONF}.bak"
+    
+    # 更新Tracker配置
+    if grep -q "bt-tracker=" "$ARIA2_CONF"; then
+        sed -i "s|^bt-tracker=.*|bt-tracker=${trackers}|" "$ARIA2_CONF"
     else
-        echo && echo -e "$(DATE_TIME) ${INFO} Get BT trackers from url(s):${CUSTOM_TRACKER_URL} ..."
-        URLS=$(echo "${CUSTOM_TRACKER_URL}" | tr "," "\n")
-        TRACKER=""
-        for URL in ${URLS}; do
-            TRACKER_DATA="$(${DOWNLOADER} "${URL}")" || continue
-            TRACKER+="$(
-                echo "${TRACKER_DATA}" \
-                | tr "," "\n" \
-                | awk '/^(udp|http|https):\/\/[^/:]+(:[0-9]+)?(\/|$)/' \
-                | sort -u \
-                | paste -sd ","
-            ),"
-        done
-        TRACKER="$(echo "${TRACKER}" | sed 's/,$//')"
+        echo "bt-tracker=${trackers}" >> "$ARIA2_CONF"
     fi
-
-    [[ -z "${TRACKER}" ]] && {
-        echo
-        echo -e "$(DATE_TIME) ${ERROR} Unable to get trackers, network failure or invalid links." && exit 1
-    }
+    
+    echo "配置文件已更新"
 }
 
-# [...] 其他函数保持不变
+# 通过RPC热更新
+rpc_update() {
+    local trackers="$1"
+    local payload
+    
+    if [ -n "$RPC_SECRET" ]; then
+        payload='{"jsonrpc":"2.0","method":"aria2.changeGlobalOption","id":"tracker-update","params":["token:'$RPC_SECRET'",{"bt-tracker":"'$trackers'"}]}'
+    else
+        payload='{"jsonrpc":"2.0","method":"aria2.changeGlobalOption","id":"tracker-update","params":[{"bt-tracker":"'$trackers'"}]}'
+    fi
+    
+    curl -fsS "$RPC_URL" -d "$payload" -H "Content-Type: application/json" && \
+    echo "RPC更新成功" || \
+    echo "RPC更新失败"
+}
 
-if [ "$1" = "cat" ]; then
-    GET_TRACKERS
-    ECHO_TRACKERS
-elif [ "$1" = "RPC" ]; then
-    RPC_ADDRESS="$2/jsonrpc"
-    RPC_SECRET="$3"
-    GET_TRACKERS
-    ECHO_TRACKERS
-    ADD_TRACKERS_REMOTE_RPC
-elif [ "$2" = "RPC" ]; then
-    GET_TRACKERS
-    ECHO_TRACKERS
-    ADD_TRACKERS
-    echo
-    ADD_TRACKERS_LOCAL_RPC
+# 主流程
+trackers=$(fetch_trackers)
+if [ -n "$trackers" ]; then
+    echo "最终获取 $(echo "$trackers" | tr -cd ',' | wc -c) 个有效Tracker"
+    update_config "$trackers"
+    rpc_update "$trackers"
 else
-    GET_TRACKERS
-    ECHO_TRACKERS
-    ADD_TRACKERS
+    echo "无法获取有效Tracker列表"
+    exit 1
 fi
-
-exit 0
