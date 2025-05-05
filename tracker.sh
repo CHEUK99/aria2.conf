@@ -131,7 +131,7 @@ if [ ! -f /tmp/.trackers_added ]; then
     GET_TRACKERS
     ECHO_TRACKERS
     ADD_TRACKERS
-    touch /tmp/.trackers_added
+    touch /config/.trackers_added
 else
     echo -e "$(DATE_TIME) ${INFO} Script has already run. Exiting..."
     exit 0
