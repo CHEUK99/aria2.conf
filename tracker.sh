@@ -36,7 +36,7 @@ LIGHT_PURPLE_FONT_PREFIX="\033[1;35m"
 FONT_COLOR_SUFFIX="\033[0m"
 INFO="[${GREEN_FONT_PREFIX}INFO${FONT_COLOR_SUFFIX}]"
 ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
-ARIA2_CONF=${1:-aria2.conf}   # Default to aria2.conf if no argument is passed
+ARIA2_CONF="/config/aria2.conf"   # Default to aria2.conf if no argument is passed
 DOWNLOADER="curl -fsSL --connect-timeout 3 --max-time 3 --retry 2"
 NL=$'\n'
 
