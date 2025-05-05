@@ -36,7 +36,7 @@ LIGHT_PURPLE_FONT_PREFIX="\033[1;35m"
 FONT_COLOR_SUFFIX="\033[0m"
 INFO="[${GREEN_FONT_PREFIX}INFO${FONT_COLOR_SUFFIX}]"
 ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
-ARIA2_CONF="/config/aria2.conf"  # 修改为绝对路径
+ARIA2_CONF=${1:-aria2.conf}
 DOWNLOADER="curl -fsSL --connect-timeout 3 --max-time 3 --retry 2"
 NL=$'\n'
 
@@ -127,25 +127,15 @@ ADD_TRACKERS_LOCAL_RPC() {
     exit 1
 }
 
-if [ "$1" = "cat" ]; then
-    GET_TRACKERS
-    ECHO_TRACKERS
-elif [ "$1" = "RPC" ]; then
-    RPC_ADDRESS="$2/jsonrpc"
-    RPC_SECRET="$3"
-    GET_TRACKERS
-    ECHO_TRACKERS
-    ADD_TRACKERS_REMOTE_RPC
-elif [ "$2" = "RPC" ]; then
+# Ensure the script only runs once, exit after adding trackers
+if [ -z "${RUN_ONCE}" ]; then
+    export RUN_ONCE=1
     GET_TRACKERS
     ECHO_TRACKERS
     ADD_TRACKERS
-    echo
-    ADD_TRACKERS_LOCAL_RPC
 else
-    GET_TRACKERS
-    ECHO_TRACKERS
-    ADD_TRACKERS
+    echo -e "$(DATE_TIME) ${INFO} Script has already run. Exiting..."
+    exit 0
 fi
 
 exit 0
