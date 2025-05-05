@@ -54,7 +54,7 @@ GET_TRACKERS() {
             ${DOWNLOADER} https://github.itzmx.com/1265578519/OpenTracker/master/tracker.txt
             ${DOWNLOADER} https://raw.githubusercontent.com/adysec/tracker/refs/heads/main/trackers_all.txt
             ${DOWNLOADER} https://raw.githubusercontent.com/ngosang/trackerslist/refs/heads/master/trackers_all.txt
-            ${DOWNLOADER} https://raw.githubusercontent.com/DeSireFire/animeTrackerList/refs/heads/master/ATaria2_all.txt
+            ${DOWNLODER} https://raw.githubusercontent.com/DeSireFire/animeTrackerList/refs/heads/master/ATaria2_all.txt
         } 2>/dev/null | tr ',' '\n' | awk NF | sort -u | tr '\n' ',' | sed 's/,$//'
     )
 
@@ -63,7 +63,6 @@ GET_TRACKERS() {
         echo -e "$(DATE_TIME) ${ERROR} Unable to get trackers, network failure or invalid links." && exit 1
     }
 }
-
 
 ECHO_TRACKERS() {
     echo -e "
@@ -128,11 +127,11 @@ ADD_TRACKERS_LOCAL_RPC() {
 }
 
 # Ensure the script only runs once, exit after adding trackers
-if [ -z "${RUN_ONCE}" ]; then
-    export RUN_ONCE=1
+if [ ! -f /tmp/.trackers_added ]; then
     GET_TRACKERS
     ECHO_TRACKERS
     ADD_TRACKERS
+    touch /tmp/.trackers_added
 else
     echo -e "$(DATE_TIME) ${INFO} Script has already run. Exiting..."
     exit 0
