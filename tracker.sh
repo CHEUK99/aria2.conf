@@ -39,6 +39,7 @@ ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
 ARIA2_CONF="/config/aria2.conf"   # Default to aria2.conf if no argument is passed
 DOWNLOADER="curl -fsSL --connect-timeout 3 --max-time 3 --retry 2"
 NL=$'\n'
+TRACKER_ADDED_FLAG="/config/.trackers_added"  # 使用新的文件路径来标记是否已经添加 trackers
 
 DATE_TIME() {
     date +"%m/%d %H:%M:%S"
@@ -54,7 +55,7 @@ GET_TRACKERS() {
             ${DOWNLOADER} https://github.itzmx.com/1265578519/OpenTracker/master/tracker.txt
             ${DOWNLOADER} https://raw.githubusercontent.com/adysec/tracker/refs/heads/main/trackers_all.txt
             ${DOWNLOADER} https://raw.githubusercontent.com/ngosang/trackerslist/refs/heads/master/trackers_all.txt
-            ${DOWNLODER} https://raw.githubusercontent.com/DeSireFire/animeTrackerList/refs/heads/master/ATaria2_all.txt
+            ${DOWNLOADER} https://raw.githubusercontent.com/DeSireFire/animeTrackerList/refs/heads/master/ATaria2_all.txt
         } 2>/dev/null | tr ',' '\n' | awk NF | sort -u | tr '\n' ',' | sed 's/,$//'
     )
 
@@ -126,12 +127,12 @@ ADD_TRACKERS_LOCAL_RPC() {
     exit 1
 }
 
-# Ensure the script only runs once, exit after adding trackers
-if [ ! -f /tmp/.trackers_added ]; then
+# Check if the trackers have already been added
+if [ ! -f ${TRACKER_ADDED_FLAG} ]; then
     GET_TRACKERS
     ECHO_TRACKERS
     ADD_TRACKERS
-    touch /config/.trackers_added
+    touch ${TRACKER_ADDED_FLAG}  # Create flag file to prevent re-running
 else
     echo -e "$(DATE_TIME) ${INFO} Script has already run. Exiting..."
     exit 0
