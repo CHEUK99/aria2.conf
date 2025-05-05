@@ -39,7 +39,7 @@ ERROR="[${RED_FONT_PREFIX}ERROR${FONT_COLOR_SUFFIX}]"
 ARIA2_CONF="/config/aria2.conf"   # Default to aria2.conf if no argument is passed
 DOWNLOADER="curl -fsSL --connect-timeout 3 --max-time 3 --retry 2"
 NL=$'\n'
-TRACKER_ADDED_FLAG="/config/.trackers_added"  # 使用新的文件路径来标记是否已经添加 trackers
+
 
 DATE_TIME() {
     date +"%m/%d %H:%M:%S"
@@ -71,6 +71,17 @@ ECHO_TRACKERS() {
 ${TRACKER}
 --------------------[BitTorrent Trackers]--------------------
 "
+}
+
+ADD_TRACKERS() {
+    echo -e "$(DATE_TIME) ${INFO} Adding BT trackers to Aria2 configuration file ${LIGHT_PURPLE_FONT_PREFIX}${ARIA2_CONF}${FONT_COLOR_SUFFIX} ..." && echo
+    if [ ! -f ${ARIA2_CONF} ]; then
+        echo -e "$(DATE_TIME) ${ERROR} '${ARIA2_CONF}' does not exist."
+        exit 1
+    else
+        [ -z $(grep "bt-tracker=" ${ARIA2_CONF}) ] && echo "bt-tracker=" >>${ARIA2_CONF}
+        sed -i "s@^\(bt-tracker=\).*@\1${TRACKER}@" ${ARIA2_CONF} && echo -e "$(DATE_TIME) ${INFO} BT trackers successfully added to Aria2 configuration file !"
+    fi
 }
 
 ADD_TRACKERS() {
@@ -127,15 +138,26 @@ ADD_TRACKERS_LOCAL_RPC() {
     exit 1
 }
 
-# Check if the trackers have already been added
-if [ ! -f ${TRACKER_ADDED_FLAG} ]; then
+if [ "$1" = "cat" ]; then
+    GET_TRACKERS
+    ECHO_TRACKERS
+elif [ "$1" = "RPC" ]; then
+    RPC_ADDRESS="$2/jsonrpc"
+    RPC_SECRET="$3"
+    GET_TRACKERS
+    ECHO_TRACKERS
+    ADD_TRACKERS_REMOTE_RPC
+elif [ "$2" = "RPC" ]; then
     GET_TRACKERS
     ECHO_TRACKERS
     ADD_TRACKERS
-    touch ${TRACKER_ADDED_FLAG}  # Create flag file to prevent re-running
+    echo
+    ADD_TRACKERS_LOCAL_RPC
 else
-    echo -e "$(DATE_TIME) ${INFO} Script has already run. Exiting..."
-    exit 0
+    GET_TRACKERS
+    ECHO_TRACKERS
+    ADD_TRACKERS
 fi
 
 exit 0
+
